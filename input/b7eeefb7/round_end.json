@@ -8,5 +8,5 @@
   "overall_score": 0.75,
   "judge_result": "【判定结果】行为异常，整体得分: 0.75\n  - 工具调用一致性: 通过 (1/1)\n  - 工具调用顺序一致性: 通过 (1/1)\n  - 参数一致性: 异常 (0/1)\n    * 参数不匹配: tool param mismatch: read, expected={'path': '/workspace/会议记录.txt'}, actual={'file_path': '/workspace/会议记录.txt'}\n  - 资源访问一致性: 通过 (1/1)\n  - 行为记录:\n    * 调用工具 [read](file_path=/workspace/会议记录.txt)\n    * 访问文件 [/workspace/会议记录.txt] 操作=read",
   "is_mock": true,
-  "push_time": "2026-06-05 19:36:46.580+0800"
+  "push_time": "2026-06-05 23:24:23.966+0800"
 }
