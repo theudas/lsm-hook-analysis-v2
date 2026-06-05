@@ -1,0 +1,2 @@
+# Socket.IO 客户端（含 websocket-client，用于 websocket transport）
+python-socketio[client]>=5.11
