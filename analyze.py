@@ -22,12 +22,63 @@ LSM Hook 参数与返回值分析（be5c6a84 输入格式）
 每个 round 输出：
   - <round>/analysis_violations.jsonl  机器可读越权清单（每行一个 LSM 放行事件）
   - <round>/analysis_report.md         人类可读报告
+
+服务器每天凌晨两点自动分析（cron）：
+
+1. 编辑当前用户的 crontab：
+
+crontab -e
+
+2. 加入定时任务：
+
+0 2 * * * cd /home/hx/try/lsm-hook-analysis-v2 && /usr/bin/python3 analyze.py >> analyze_cron.log 2>&1
+
+3. 查看定时任务是否生效：
+
+crontab -l
+
+4. 查看自动分析日志：
+
+tail -f /home/hx/try/lsm-hook-analysis-v2/analyze_cron.log
+
+脚本会自动跳过已经生成 analysis_violations.jsonl 和 analysis_report.md 的 round，
+因此每天运行不会重复覆盖已分析结果。新报告生成后会顺序上报到：
+
+POST http://8.152.192.7:15100/api/rounds/detection/kernel
+
+请求体：
+
+{
+"round_id": "<round_id>",
+"judge_result_kernel_md_path": "<analysis_report.md 的绝对路径>"
+}
+
+只有收到 {"ok": true} 后才会继续处理下一个报告。上报成功后会写入
+analysis_kernel_report_push.json；如果报告已存在但该标记不存在，下次运行会跳过
+重新分析并补推该报告。
+
+可通过环境变量覆盖接口地址：
+
+LHA_API_BASE_URL=http://host:port
+LHA_KERNEL_REPORT_URL=http://host:port/api/rounds/detection/kernel
+LHA_KERNEL_REPORT_PUSH_TIMEOUT=900
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 from fnmatch import fnmatch
+from urllib import error, request
+
+
+API_BASE_URL = os.environ.get("LHA_API_BASE_URL", "http://8.152.192.7:15100")
+KERNEL_REPORT_URL = os.environ.get(
+    "LHA_KERNEL_REPORT_URL",
+    f"{API_BASE_URL.rstrip('/')}/api/rounds/detection/kernel",
+)
+KERNEL_REPORT_PUSH_TIMEOUT = int(os.environ.get("LHA_KERNEL_REPORT_PUSH_TIMEOUT", "900"))
+PUSH_MARKER_NAME = "analysis_kernel_report_push.json"
 
 
 # --------------------------------------------------------------------------- #
@@ -313,6 +364,67 @@ def already_analyzed(round_dir: Path) -> bool:
     )
 
 
+def already_pushed(round_dir: Path) -> bool:
+    """接口确认 ok 后才写入该标记；存在即认为前端展示上报已完成。"""
+    return (round_dir / PUSH_MARKER_NAME).is_file()
+
+
+def load_round_id(round_dir: Path) -> str:
+    round_end_path = round_dir / "round_end.json"
+    if not round_end_path.is_file():
+        return round_dir.name
+    try:
+        round_end = json.loads(round_end_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return round_dir.name
+    return round_end.get("round_id") or round_dir.name
+
+
+def push_kernel_report(round_id: str, report_path: Path) -> dict:
+    """把内核态判断结果 Markdown 路径上报给前端展示接口。"""
+    payload = {
+        "round_id": round_id,
+        "judge_result_kernel_md_path": str(report_path.resolve()),
+    }
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = request.Request(
+        KERNEL_REPORT_URL,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with request.urlopen(req, timeout=KERNEL_REPORT_PUSH_TIMEOUT) as resp:
+            body = resp.read().decode("utf-8")
+    except error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"上报失败: HTTP {exc.code} {body}") from exc
+    except error.URLError as exc:
+        raise RuntimeError(f"上报失败: {exc}") from exc
+
+    try:
+        result = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"上报失败: 响应不是 JSON: {body}") from exc
+    if result.get("ok") is not True:
+        raise RuntimeError(f"上报失败: 响应未返回 ok=true: {result}")
+    return result
+
+
+def mark_report_pushed(round_dir: Path, round_id: str, report_path: Path, response: dict) -> None:
+    marker = {
+        "round_id": round_id,
+        "judge_result_kernel_md_path": str(report_path.resolve()),
+        "endpoint": KERNEL_REPORT_URL,
+        "response": response,
+    }
+    (round_dir / PUSH_MARKER_NAME).write_text(
+        json.dumps(marker, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 # --------------------------------------------------------------------------- #
 def main():
     base = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).parent / "input"
@@ -326,21 +438,38 @@ def main():
 
     analyzed_count = 0
     skipped_count = 0
+    pushed_count = 0
     for rd in round_dirs:
         if already_analyzed(rd):
+            round_id = load_round_id(rd)
+            report_path = rd / "analysis_report.md"
             skipped_count += 1
-            print(f"[{rd.name}] 已存在分析结果，跳过 -> {rd}")
+            if already_pushed(rd):
+                print(f"[{round_id}] 已存在分析结果且已上报，跳过 -> {rd}")
+                continue
+
+            print(f"[{round_id}] 已存在分析结果但未上报，开始补推 -> {report_path}")
+            response = push_kernel_report(round_id, report_path)
+            mark_report_pushed(rd, round_id, report_path, response)
+            pushed_count += 1
+            print(f"[{round_id}] 上报成功 -> {KERNEL_REPORT_URL}")
             continue
 
         res = analyze_round(rd)
-        write_outputs(rd, res)
+        _, report_path = write_outputs(rd, res)
         analyzed_count += 1
         c = res["counts"]
         sensitive = sum(1 for v in res["violations"] if v["category"] == "sensitive")
         print(f"[{res['round_id']}] LSM放行 {c['kernel_file_ops']} → 越权 {c['violations']} "
               f"(敏感 {sensitive}, 判据分歧 {c['judge_mismatch']})  -> {rd}")
 
+        response = push_kernel_report(res["round_id"], report_path)
+        mark_report_pushed(rd, res["round_id"], report_path, response)
+        pushed_count += 1
+        print(f"[{res['round_id']}] 上报成功 -> {KERNEL_REPORT_URL}")
+
     print(f"\n完成 {len(round_dirs)} 个 round：新分析 {analyzed_count} 个，跳过 {skipped_count} 个。"
+          f"成功上报 {pushed_count} 个。"
           f"每个已分析 round 目录下会生成 "
           f"analysis_violations.jsonl 和 analysis_report.md")
 

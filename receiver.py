@@ -17,7 +17,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=hx
+User=root
 WorkingDirectory=/home/hx/try/lsm-hook-analysis-v2
 ExecStart=/usr/bin/python3 /home/hx/try/lsm-hook-analysis-v2/receiver.py
 Restart=always
@@ -28,8 +28,6 @@ Environment=PYTHONUNBUFFERED=1
 WantedBy=multi-user.target
 EOF
 
-如果使用虚拟环境，把 ExecStart 改成：
-ExecStart=/home/hx/try/lsm-hook-analysis-v2/.venv/bin/python /home/hx/try/lsm-hook-analysis-v2/receiver.py
 
 2. 启动并设置开机自启：
 
