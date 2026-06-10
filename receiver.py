@@ -4,6 +4,47 @@ Socket.IO 接收端：监听监控服务的 push 事件，落盘 round_end / rou
 只处理 round_end 和 round_kernel 两种消息，按 round_id 分目录存到 input/ 下。
 round_kernel 中的 syscall_seq / lsm_hook_result 是服务端文件路径，本脚本假定
 本地可访问（同机或共享盘），会把文件内容拷贝进对应 round 目录。
+
+服务器持久运行部署方式（systemd）：
+
+1. 创建服务文件：
+
+sudo tee /etc/systemd/system/lha_receiver.service >/dev/null <<'EOF'
+[Unit]
+Description=LHA Socket.IO Receiver
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hx
+WorkingDirectory=/home/hx/try/lsm-hook-analysis-v2
+ExecStart=/usr/bin/python3 /home/hx/try/lsm-hook-analysis-v2/receiver.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+如果使用虚拟环境，把 ExecStart 改成：
+ExecStart=/home/hx/try/lsm-hook-analysis-v2/.venv/bin/python /home/hx/try/lsm-hook-analysis-v2/receiver.py
+
+2. 启动并设置开机自启：
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now lha_receiver.service
+
+3. 查看状态和实时日志：
+
+systemctl status lha_receiver.service
+journalctl -u lha_receiver.service -f
+
+4. 重启或停止：
+
+sudo systemctl restart lha_receiver.service
+sudo systemctl stop lha_receiver.service
 """
 
 import json
@@ -20,13 +61,14 @@ SERVER_URL = "ws://8.152.192.7:15100"
 SOCKETIO_PATH = "/wss"
 NAMESPACE = "/wss/monitor"
 INPUT_DIR = Path(__file__).parent / "input"
+RECEIVER_NAME = "lha_receiver"
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    format="%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-log = logging.getLogger("receiver")
+log = logging.getLogger(RECEIVER_NAME)
 
 
 # ---------------------------------------------------------------------------

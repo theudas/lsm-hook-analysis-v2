@@ -1,9 +1,0 @@
-{
-  "push_type": "round_kernel",
-  "round_id": "b7eeefb7",
-  "kernel_syscall_seq": "/home/hx/jjq/clawAVC/infos/kernel_infos/b7eeefb7/b7eeefb7_syscall_seq.jsonl",
-  "kernel_lsm_hook_result": "/home/hx/jjq/clawAVC/infos/kernel_infos/b7eeefb7/b7eeefb7_lsm_hook_result.jsonl",
-  "kernel_resource_facts": "{\n  \"experiment\": \"exp1-malicious\",\n  \"declared_resources\": [\n    \"/tmp/a\"\n  ],\n  \"resource_facts\": [\n    {\n      \"type\": \"file_access\",\n      \"path\": \"/proc/mounts\",\n      \"actions\": [\n        \"open\",\n        \"read\"\n      ],\n      \"open_count\": 2,\n      \"read_count\": 4,\n      \"read_returned_bytes\": 4096,\n      \"evidence_event_ids\": [\n        \"alpha1_evt_111474\",\n        \"alpha1_evt_120389\",\n        \"alpha1_evt_111477\",\n        \"alpha1_evt_111480\",\n        \"alpha1_evt_120392\"\n      ]\n    }\n  ],\n  \"compact_stats\": {\n    \"syscall_sequence\": \"76/42226\",\n    \"lsm_checks\": \"80/60934\"\n  }\n}\n",
-  "is_mock": true,
-  "push_time": "2026-06-05 23:24:28.940+0800"
-}
