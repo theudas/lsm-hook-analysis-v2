@@ -305,6 +305,14 @@ def write_outputs(round_dir: Path, result: dict):
     return jl, md
 
 
+def already_analyzed(round_dir: Path) -> bool:
+    """分析产物都存在时，认为该 round 已经分析过。"""
+    return (
+        (round_dir / "analysis_violations.jsonl").is_file()
+        and (round_dir / "analysis_report.md").is_file()
+    )
+
+
 # --------------------------------------------------------------------------- #
 def main():
     base = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).parent / "input"
@@ -316,15 +324,24 @@ def main():
         print(f"未找到任何 round 目录(需含 round_end.json): {base}")
         return
 
+    analyzed_count = 0
+    skipped_count = 0
     for rd in round_dirs:
+        if already_analyzed(rd):
+            skipped_count += 1
+            print(f"[{rd.name}] 已存在分析结果，跳过 -> {rd}")
+            continue
+
         res = analyze_round(rd)
         write_outputs(rd, res)
+        analyzed_count += 1
         c = res["counts"]
         sensitive = sum(1 for v in res["violations"] if v["category"] == "sensitive")
         print(f"[{res['round_id']}] LSM放行 {c['kernel_file_ops']} → 越权 {c['violations']} "
               f"(敏感 {sensitive}, 判据分歧 {c['judge_mismatch']})  -> {rd}")
 
-    print(f"\n完成 {len(round_dirs)} 个 round。每个 round 目录下已生成 "
+    print(f"\n完成 {len(round_dirs)} 个 round：新分析 {analyzed_count} 个，跳过 {skipped_count} 个。"
+          f"每个已分析 round 目录下会生成 "
           f"analysis_violations.jsonl 和 analysis_report.md")
 
 
