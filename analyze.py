@@ -249,7 +249,7 @@ def write_outputs(round_dir: Path, result: dict):
     a = lines.append
     c = result["counts"]
     a(f"# 越权分析报告 — round `{result['round_id']}`\n")
-    a(f"- 时间窗(墙钟): {result['time_start']} → {result['time_end']}")
+    a(f"- 时间窗: {result['time_start']} → {result['time_end']}")
     a(f"- 工具: `{result['tool_name']}`")
     a(f"- 用户态判定得分: {result['overall_score']}")
     a(f"- 内核事件: LSM {c['lsm_total']} 条 / syscall {c['syscall_total']} 条 / "
