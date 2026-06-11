@@ -1,0 +1,4 @@
+[be5c6a84] LSM放行 63 → 越权 61 (敏感 47, 判据分歧 0)  -> /home/hx/try/lsm-hook-analysis-v2/input/be5c6a84
+[be5c6a84] 上报成功 -> http://8.152.192.7:15100/api/rounds/detection/kernel
+
+完成 1 个 round：新分析 1 个，跳过 0 个。成功上报 1 个。每个已分析 round 目录下会生成 analysis_violations.jsonl 和 analysis_report.md
