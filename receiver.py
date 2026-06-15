@@ -48,6 +48,7 @@ sudo systemctl stop lha_receiver.service
 import json
 import logging
 import shutil
+from datetime import datetime
 from pathlib import Path
 
 import socketio
@@ -59,14 +60,32 @@ SERVER_URL = "ws://8.152.192.7:15100"
 SOCKETIO_PATH = "/wss"
 NAMESPACE = "/wss/monitor"
 INPUT_DIR = Path(__file__).parent / "input"
+LOG_DIR = Path(__file__).parent / "logs"
 RECEIVER_NAME = "lha_receiver"
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-log = logging.getLogger(RECEIVER_NAME)
+
+def setup_logging() -> logging.Logger:
+    """同时输出到 systemd/控制台和本地日志文件，便于实时看和事后追踪。"""
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    logger = logging.getLogger(RECEIVER_NAME)
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
+    logger.propagate = False
+
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    for handler in (
+        logging.StreamHandler(),
+        logging.FileHandler(LOG_DIR / "receiver.log", encoding="utf-8"),
+    ):
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+    return logger
+
+
+log = setup_logging()
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +104,17 @@ sio = socketio.Client(
 # ---------------------------------------------------------------------------
 # 落盘辅助
 # ---------------------------------------------------------------------------
+def json_size(data: dict) -> int:
+    """返回消息序列化后的字节数，用于判断收到的信息规模。"""
+    return len(json.dumps(data, ensure_ascii=False).encode("utf-8"))
+
+
+def safe_len(value) -> int:
+    if value is None:
+        return 0
+    return len(str(value))
+
+
 def round_dir(round_id: str) -> Path:
     """返回（并创建）某个 round 的输出目录。"""
     d = INPUT_DIR / round_id
@@ -95,8 +125,15 @@ def round_dir(round_id: str) -> Path:
 def save_message(round_id: str, name: str, data: dict) -> None:
     """把整条消息以格式化 JSON 存盘。"""
     path = round_dir(round_id) / f"{name}.json"
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    log.info("已保存 %s -> %s", name, path)
+    raw = json.dumps(data, ensure_ascii=False, indent=2)
+    path.write_text(raw, encoding="utf-8")
+    log.info(
+        "[%s] 已保存消息 name=%s path=%s size=%d bytes",
+        round_id,
+        name,
+        path,
+        path.stat().st_size,
+    )
 
 
 def copy_kernel_file(round_id: str, src_path: str, dst_name: str) -> None:
@@ -109,8 +146,21 @@ def copy_kernel_file(round_id: str, src_path: str, dst_name: str) -> None:
         log.warning("[%s] 文件不存在或不可访问，跳过拷贝: %s", round_id, src_path)
         return
     dst = round_dir(round_id) / dst_name
+    log.info(
+        "[%s] 开始拷贝内核文件 src=%s dst=%s src_size=%d bytes",
+        round_id,
+        src,
+        dst,
+        src.stat().st_size,
+    )
     shutil.copy2(src, dst)
-    log.info("[%s] 已拷贝 %s -> %s", round_id, src_path, dst)
+    log.info(
+        "[%s] 内核文件拷贝完成 src=%s dst=%s dst_size=%d bytes",
+        round_id,
+        src_path,
+        dst,
+        dst.stat().st_size,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -119,22 +169,64 @@ def copy_kernel_file(round_id: str, src_path: str, dst_name: str) -> None:
 @sio.on("push", namespace=NAMESPACE)
 def on_push(data):
     if not isinstance(data, dict):
-        log.warning("收到非字典消息，忽略: %r", data)
+        log.warning(
+            "收到非字典消息，忽略 received_at=%s data_type=%s data=%r",
+            datetime.now().isoformat(timespec="seconds"),
+            type(data).__name__,
+            data,
+        )
         return
 
     push_type = data.get("push_type")
     round_id = data.get("round_id")
+    received_at = datetime.now().isoformat(timespec="seconds")
+    log.info(
+        "[%s] 收到 push 消息 received_at=%s push_type=%s push_time=%s keys=%s size=%d bytes",
+        round_id or "-",
+        received_at,
+        push_type,
+        data.get("push_time"),
+        sorted(data.keys()),
+        json_size(data),
+    )
 
     if not round_id:
-        log.warning("消息缺少 round_id，忽略: push_type=%s", push_type)
+        log.warning(
+            "消息缺少 round_id，忽略 push_type=%s push_time=%s keys=%s",
+            push_type,
+            data.get("push_time"),
+            sorted(data.keys()),
+        )
         return
 
     if push_type == "round_end":
-        log.info("[%s] round_end  score=%s", round_id, data.get("overall_score"))
+        log.info(
+            "[%s] round_end 摘要 overall_score=%s time_start=%s time_end=%s "
+            "is_mock=%s action_json_len=%d ir_json_len=%d",
+            round_id,
+            data.get("overall_score"),
+            data.get("time_start"),
+            data.get("time_end"),
+            data.get("is_mock"),
+            safe_len(data.get("action_json")),
+            safe_len(data.get("ir_json")),
+        )
         save_message(round_id, "round_end", data)
 
     elif push_type == "round_kernel":
-        log.info("[%s] round_kernel", round_id)
+        syscall_path = data.get("kernel_syscall_seq")
+        lsm_path = data.get("kernel_lsm_hook_result")
+        log.info(
+            "[%s] round_kernel 摘要 is_mock=%s syscall_path=%s syscall_exists=%s "
+            "lsm_path=%s lsm_exists=%s resource_facts_len=%d",
+            round_id,
+            data.get("is_mock"),
+            syscall_path,
+            Path(syscall_path).is_file() if syscall_path else False,
+            lsm_path,
+            Path(lsm_path).is_file() if lsm_path else False,
+            safe_len(data.get("kernel_resource_facts")),
+        )
         save_message(round_id, "round_kernel", data)
         copy_kernel_file(
             round_id, data.get("kernel_syscall_seq"), "kernel_syscall_seq.jsonl"
@@ -145,12 +237,18 @@ def on_push(data):
 
     else:
         # round_start / round_ir_ready 等其余类型按需求忽略
-        log.debug("[%s] 忽略 push_type=%s", round_id, push_type)
+        log.info(
+            "[%s] 忽略未处理的 push_type=%s push_time=%s keys=%s",
+            round_id,
+            push_type,
+            data.get("push_time"),
+            sorted(data.keys()),
+        )
 
 
 @sio.event(namespace=NAMESPACE)
 def connect():
-    log.info("已连接到 %s%s", SERVER_URL, NAMESPACE)
+    log.info("已连接到 server=%s namespace=%s socketio_path=%s", SERVER_URL, NAMESPACE, SOCKETIO_PATH)
 
 
 @sio.event(namespace=NAMESPACE)
@@ -163,7 +261,14 @@ def disconnect():
 # ---------------------------------------------------------------------------
 def main():
     INPUT_DIR.mkdir(parents=True, exist_ok=True)
-    log.info("数据将保存到: %s", INPUT_DIR.resolve())
+    log.info(
+        "接收端启动 server=%s namespace=%s socketio_path=%s input_dir=%s log_file=%s",
+        SERVER_URL,
+        NAMESPACE,
+        SOCKETIO_PATH,
+        INPUT_DIR.resolve(),
+        (LOG_DIR / "receiver.log").resolve(),
+    )
     sio.connect(
         SERVER_URL,
         socketio_path=SOCKETIO_PATH,

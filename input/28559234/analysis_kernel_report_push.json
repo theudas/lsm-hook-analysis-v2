@@ -1,0 +1,8 @@
+{
+  "round_id": "28559234",
+  "judge_result_kernel_md_path": "/home/hx/try/lsm-hook-analysis-v2/input/28559234/analysis_report.md",
+  "endpoint": "http://8.152.192.7:15100/api/rounds/detection/kernel",
+  "response": {
+    "ok": true
+  }
+}

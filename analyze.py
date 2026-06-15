@@ -53,9 +53,9 @@ POST http://8.152.192.7:15100/api/rounds/detection/kernel
 "judge_result_kernel_md_path": "<analysis_report.md 的绝对路径>"
 }
 
-只有收到 {"ok": true} 后才会继续处理下一个报告。上报成功后会写入
-analysis_kernel_report_push.json；如果报告已存在但该标记不存在，下次运行会跳过
-重新分析并补推该报告。
+只有收到 {"ok": true} 后才会写入 analysis_kernel_report_push.json；如果报告已存在
+但该标记不存在，下次运行会跳过重新分析并补推该报告。单个 round 上报失败
+会记录错误并继续处理后续 round。
 
 可通过环境变量覆盖接口地址：
 
@@ -65,13 +65,17 @@ LHA_KERNEL_REPORT_PUSH_TIMEOUT=900
 """
 
 import json
+import logging
 import os
 import sys
+import time
 from pathlib import Path
 from fnmatch import fnmatch
 from urllib import error, request
 
 
+SCRIPT_DIR = Path(__file__).parent
+LOG_DIR = SCRIPT_DIR / "logs"
 API_BASE_URL = os.environ.get("LHA_API_BASE_URL", "http://8.152.192.7:15100")
 KERNEL_REPORT_URL = os.environ.get(
     "LHA_KERNEL_REPORT_URL",
@@ -79,15 +83,67 @@ KERNEL_REPORT_URL = os.environ.get(
 )
 KERNEL_REPORT_PUSH_TIMEOUT = int(os.environ.get("LHA_KERNEL_REPORT_PUSH_TIMEOUT", "900"))
 PUSH_MARKER_NAME = "analysis_kernel_report_push.json"
+ANALYZER_NAME = "lha_analyzer"
+
+
+def setup_logging() -> logging.Logger:
+    """同时写 cron/控制台输出和独立日志文件。"""
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    logger = logging.getLogger(ANALYZER_NAME)
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
+    logger.propagate = False
+
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    for handler in (
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(LOG_DIR / "analyze.log", encoding="utf-8"),
+    ):
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+    return logger
+
+
+log = setup_logging()
 
 
 # --------------------------------------------------------------------------- #
 # 解析输入
 # --------------------------------------------------------------------------- #
+def file_size(path: Path) -> int:
+    return path.stat().st_size if path.is_file() else 0
+
+
+def load_json_file(path: Path) -> dict:
+    if not path.is_file():
+        log.warning("输入 JSON 文件不存在 path=%s", path)
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        log.exception("输入 JSON 解析失败 path=%s size=%d bytes", path, file_size(path))
+        raise
+    log.info("已加载 JSON path=%s size=%d bytes keys=%s", path, file_size(path), sorted(data.keys()))
+    return data
+
+
 def load_jsonl(path: Path) -> list:
     if not path.is_file():
+        log.warning("输入 JSONL 文件不存在 path=%s", path)
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = []
+    try:
+        for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if line.strip():
+                rows.append(json.loads(line))
+    except json.JSONDecodeError:
+        log.exception("输入 JSONL 解析失败 path=%s line=%d size=%d bytes", path, line_no, file_size(path))
+        raise
+    log.info("已加载 JSONL path=%s rows=%d size=%d bytes", path, len(rows), file_size(path))
+    return rows
 
 
 def parse_allowlist(round_end: dict) -> dict:
@@ -118,10 +174,14 @@ def parse_resource_facts(round_kernel: dict) -> list:
     """round_kernel.json 里 kernel_resource_facts 是字符串化的 JSON，含每路径汇总。"""
     raw = round_kernel.get("kernel_resource_facts")
     if not raw:
+        log.info("round_kernel.kernel_resource_facts 为空")
         return []
     try:
-        return json.loads(raw).get("resource_facts", [])
+        facts = json.loads(raw).get("resource_facts", [])
+        log.info("已解析 kernel_resource_facts count=%d raw_len=%d", len(facts), len(raw))
+        return facts
     except (json.JSONDecodeError, AttributeError):
+        log.exception("kernel_resource_facts 解析失败 raw_len=%d", len(raw))
         return []
 
 
@@ -234,10 +294,22 @@ def classify(path: str) -> str:
 # 单 round 分析
 # --------------------------------------------------------------------------- #
 def analyze_round(round_dir: Path) -> dict:
-    round_end = json.loads((round_dir / "round_end.json").read_text(encoding="utf-8")) \
-        if (round_dir / "round_end.json").is_file() else {}
-    round_kernel = json.loads((round_dir / "round_kernel.json").read_text(encoding="utf-8")) \
-        if (round_dir / "round_kernel.json").is_file() else {}
+    started = time.monotonic()
+    input_files = {
+        "round_end": round_dir / "round_end.json",
+        "round_kernel": round_dir / "round_kernel.json",
+        "lsm": round_dir / "kernel_lsm_hook_result.jsonl",
+        "syscalls": round_dir / "kernel_syscall_seq.jsonl",
+    }
+    log.info(
+        "[%s] 开始分析 round_dir=%s files=%s",
+        round_dir.name,
+        round_dir,
+        {name: {"exists": path.is_file(), "size": file_size(path)} for name, path in input_files.items()},
+    )
+
+    round_end = load_json_file(input_files["round_end"])
+    round_kernel = load_json_file(input_files["round_kernel"])
     lsm = load_jsonl(round_dir / "kernel_lsm_hook_result.jsonl")
     syscalls = load_jsonl(round_dir / "kernel_syscall_seq.jsonl")
 
@@ -245,6 +317,16 @@ def analyze_round(round_dir: Path) -> dict:
     user_actions = parse_user_actions(round_end)
     resource_facts = parse_resource_facts(round_kernel)
     kernel_ops = extract_kernel_file_ops(lsm, syscalls)
+    log.info(
+        "[%s] 输入解析完成 allowed_files=%d allowed_tools=%d user_actions=%d "
+        "resource_facts=%d kernel_ops=%d",
+        round_end.get("round_id", round_dir.name),
+        len(allowed["files"]),
+        len(allowed["tools"]),
+        len(user_actions),
+        len(resource_facts),
+        len(kernel_ops),
+    )
 
     violations = []
     role_ir_mismatch = 0
@@ -262,7 +344,7 @@ def analyze_round(round_dir: Path) -> dict:
             v["judges_agree"] = (ir_violation == role_violation)
             violations.append(v)
 
-    return {
+    result = {
         "round_id": round_end.get("round_id", round_dir.name),
         "time_start": round_end.get("time_start"),
         "time_end": round_end.get("time_end"),
@@ -283,12 +365,28 @@ def analyze_round(round_dir: Path) -> dict:
         },
         "violations": violations,
     }
+    counts = result["counts"]
+    sensitive = sum(1 for v in violations if v["category"] == "sensitive")
+    log.info(
+        "[%s] 分析完成 elapsed=%.3fs lsm_total=%d syscall_total=%d kernel_file_ops=%d "
+        "violations=%d sensitive=%d judge_mismatch=%d",
+        result["round_id"],
+        time.monotonic() - started,
+        counts["lsm_total"],
+        counts["syscall_total"],
+        counts["kernel_file_ops"],
+        counts["violations"],
+        sensitive,
+        counts["judge_mismatch"],
+    )
+    return result
 
 
 # --------------------------------------------------------------------------- #
 # 输出
 # --------------------------------------------------------------------------- #
 def write_outputs(round_dir: Path, result: dict):
+    started = time.monotonic()
     # JSONL：每行一个越权事件
     jl = round_dir / "analysis_violations.jsonl"
     with jl.open("w", encoding="utf-8") as f:
@@ -353,6 +451,16 @@ def write_outputs(round_dir: Path, result: dict):
 
     md = round_dir / "analysis_report.md"
     md.write_text("\n".join(lines), encoding="utf-8")
+    log.info(
+        "[%s] 分析产物写入完成 elapsed=%.3fs violations_path=%s violations_size=%d bytes "
+        "report_path=%s report_size=%d bytes",
+        result["round_id"],
+        time.monotonic() - started,
+        jl,
+        file_size(jl),
+        md,
+        file_size(md),
+    )
     return jl, md
 
 
@@ -369,24 +477,53 @@ def already_pushed(round_dir: Path) -> bool:
     return (round_dir / PUSH_MARKER_NAME).is_file()
 
 
+def is_mock_round(round_dir: Path) -> bool:
+    """mock round 只用于本地测试，不应推送到正式展示接口。"""
+    for name in ("round_end.json", "round_kernel.json"):
+        path = round_dir / name
+        if not path.is_file():
+            continue
+        try:
+            metadata = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if metadata.get("is_mock") is True:
+            return True
+    return False
+
+
 def load_round_id(round_dir: Path) -> str:
     round_end_path = round_dir / "round_end.json"
     if not round_end_path.is_file():
+        log.warning("[%s] 缺少 round_end.json，使用目录名作为 round_id", round_dir.name)
         return round_dir.name
     try:
         round_end = json.loads(round_end_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
+        log.exception("[%s] round_end.json 解析失败，使用目录名作为 round_id path=%s", round_dir.name, round_end_path)
         return round_dir.name
     return round_end.get("round_id") or round_dir.name
 
 
 def push_kernel_report(round_id: str, report_path: Path) -> dict:
     """把内核态判断结果 Markdown 路径上报给前端展示接口。"""
+    started = time.monotonic()
     payload = {
         "round_id": round_id,
         "judge_result_kernel_md_path": str(report_path.resolve()),
     }
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    log.info(
+        "[%s] 开始上报内核分析报告 url=%s timeout=%ss payload=%s payload_size=%d bytes "
+        "report_exists=%s report_size=%d bytes",
+        round_id,
+        KERNEL_REPORT_URL,
+        KERNEL_REPORT_PUSH_TIMEOUT,
+        payload,
+        len(data),
+        report_path.is_file(),
+        file_size(report_path),
+    )
     req = request.Request(
         KERNEL_REPORT_URL,
         data=data,
@@ -399,16 +536,32 @@ def push_kernel_report(round_id: str, report_path: Path) -> dict:
             body = resp.read().decode("utf-8")
     except error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
+        log.exception(
+            "[%s] 上报失败 HTTPError status=%s elapsed=%.3fs body=%s",
+            round_id,
+            exc.code,
+            time.monotonic() - started,
+            body,
+        )
         raise RuntimeError(f"上报失败: HTTP {exc.code} {body}") from exc
     except error.URLError as exc:
+        log.exception("[%s] 上报失败 URLError elapsed=%.3fs error=%s", round_id, time.monotonic() - started, exc)
         raise RuntimeError(f"上报失败: {exc}") from exc
 
     try:
         result = json.loads(body)
     except json.JSONDecodeError as exc:
+        log.exception("[%s] 上报失败，响应不是 JSON elapsed=%.3fs body=%s", round_id, time.monotonic() - started, body)
         raise RuntimeError(f"上报失败: 响应不是 JSON: {body}") from exc
     if result.get("ok") is not True:
+        log.error("[%s] 上报失败，响应未返回 ok=true elapsed=%.3fs response=%s", round_id, time.monotonic() - started, result)
         raise RuntimeError(f"上报失败: 响应未返回 ok=true: {result}")
+    log.info(
+        "[%s] 上报成功 elapsed=%.3fs response=%s",
+        round_id,
+        time.monotonic() - started,
+        result,
+    )
     return result
 
 
@@ -419,40 +572,81 @@ def mark_report_pushed(round_dir: Path, round_id: str, report_path: Path, respon
         "endpoint": KERNEL_REPORT_URL,
         "response": response,
     }
-    (round_dir / PUSH_MARKER_NAME).write_text(
+    marker_path = round_dir / PUSH_MARKER_NAME
+    marker_path.write_text(
         json.dumps(marker, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    log.info(
+        "[%s] 已写入上报标记 marker_path=%s marker_size=%d bytes endpoint=%s",
+        round_id,
+        marker_path,
+        file_size(marker_path),
+        KERNEL_REPORT_URL,
+    )
+
+
+def push_and_mark_report(round_dir: Path, round_id: str, report_path: Path) -> bool:
+    try:
+        response = push_kernel_report(round_id, report_path)
+    except RuntimeError as exc:
+        log.error("[%s] 上报失败，继续处理后续 round error=%s report_path=%s", round_id, exc, report_path)
+        return False
+
+    mark_report_pushed(round_dir, round_id, report_path, response)
+    log.info("[%s] 上报成功 -> %s", round_id, KERNEL_REPORT_URL)
+    return True
 
 
 # --------------------------------------------------------------------------- #
 def main():
-    base = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).parent / "input"
+    started = time.monotonic()
+    base = Path(sys.argv[1]) if len(sys.argv) > 1 else SCRIPT_DIR / "input"
+    log.info(
+        "分析任务启动 base=%s api_url=%s push_timeout=%ss log_file=%s",
+        base,
+        KERNEL_REPORT_URL,
+        KERNEL_REPORT_PUSH_TIMEOUT,
+        (LOG_DIR / "analyze.log").resolve(),
+    )
     round_dirs = [d for d in sorted(base.iterdir())
                   if d.is_dir() and (d / "round_end.json").is_file()] if base.is_dir() else []
     if not round_dirs and (base / "round_end.json").is_file():
         round_dirs = [base]
     if not round_dirs:
-        print(f"未找到任何 round 目录(需含 round_end.json): {base}")
+        log.warning("未找到任何 round 目录(需含 round_end.json): %s", base)
         return
 
+    log.info("发现 round 目录 count=%d dirs=%s", len(round_dirs), [str(d) for d in round_dirs])
     analyzed_count = 0
     skipped_count = 0
     pushed_count = 0
+    failed_push_count = 0
     for rd in round_dirs:
+        round_id = load_round_id(rd)
+        if is_mock_round(rd):
+            skipped_count += 1
+            log.info("[%s] mock round，跳过分析和正式上报 round_dir=%s", round_id, rd)
+            continue
+
         if already_analyzed(rd):
-            round_id = load_round_id(rd)
             report_path = rd / "analysis_report.md"
             skipped_count += 1
             if already_pushed(rd):
-                print(f"[{round_id}] 已存在分析结果且已上报，跳过 -> {rd}")
+                log.info(
+                    "[%s] 已存在分析结果且已上报，跳过 round_dir=%s report_path=%s marker_path=%s",
+                    round_id,
+                    rd,
+                    report_path,
+                    rd / PUSH_MARKER_NAME,
+                )
                 continue
 
-            print(f"[{round_id}] 已存在分析结果但未上报，开始补推 -> {report_path}")
-            response = push_kernel_report(round_id, report_path)
-            mark_report_pushed(rd, round_id, report_path, response)
-            pushed_count += 1
-            print(f"[{round_id}] 上报成功 -> {KERNEL_REPORT_URL}")
+            log.info("[%s] 已存在分析结果但未上报，开始补推 report_path=%s", round_id, report_path)
+            if push_and_mark_report(rd, round_id, report_path):
+                pushed_count += 1
+            else:
+                failed_push_count += 1
             continue
 
         res = analyze_round(rd)
@@ -460,18 +654,31 @@ def main():
         analyzed_count += 1
         c = res["counts"]
         sensitive = sum(1 for v in res["violations"] if v["category"] == "sensitive")
-        print(f"[{res['round_id']}] LSM放行 {c['kernel_file_ops']} → 越权 {c['violations']} "
-              f"(敏感 {sensitive}, 判据分歧 {c['judge_mismatch']})  -> {rd}")
+        log.info(
+            "[%s] 分析结果摘要 LSM放行=%d 越权=%d 敏感=%d 判据分歧=%d round_dir=%s",
+            res["round_id"],
+            c["kernel_file_ops"],
+            c["violations"],
+            sensitive,
+            c["judge_mismatch"],
+            rd,
+        )
 
-        response = push_kernel_report(res["round_id"], report_path)
-        mark_report_pushed(rd, res["round_id"], report_path, response)
-        pushed_count += 1
-        print(f"[{res['round_id']}] 上报成功 -> {KERNEL_REPORT_URL}")
+        if push_and_mark_report(rd, res["round_id"], report_path):
+            pushed_count += 1
+        else:
+            failed_push_count += 1
 
-    print(f"\n完成 {len(round_dirs)} 个 round：新分析 {analyzed_count} 个，跳过 {skipped_count} 个。"
-          f"成功上报 {pushed_count} 个。"
-          f"每个已分析 round 目录下会生成 "
-          f"analysis_violations.jsonl 和 analysis_report.md")
+    log.info(
+        "分析任务完成 elapsed=%.3fs total=%d new_analyzed=%d skipped=%d pushed=%d failed_push=%d "
+        "outputs=analysis_violations.jsonl,analysis_report.md",
+        time.monotonic() - started,
+        len(round_dirs),
+        analyzed_count,
+        skipped_count,
+        pushed_count,
+        failed_push_count,
+    )
 
 
 if __name__ == "__main__":
