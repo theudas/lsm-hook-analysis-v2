@@ -1,0 +1,11 @@
+{
+  "push_type": "round_end",
+  "round_id": "e4fe4e38",
+  "time_start": "2026-06-15 21:23:42.389+0800",
+  "time_end": "2026-06-15 21:23:50.849+0800",
+  "action_json": "[]",
+  "ir_json": "{\"level1\": [], \"level2\": {}, \"meta\": {\"level1\": {\"attempt\": 1, \"endpoint\": \"https://api.longcat.chat/openai/v1/chat/completions\", \"latency_ms\": 4706, \"model\": \"LongCat-2.0-Preview\", \"parsed_scenes\": [], \"raw_response\": \"{\\n  \\\"scenes\\\": []\\n}\", \"usage\": {\"cache_read_tokens\": 0, \"cache_write_tokens\": 0, \"cached_tokens\": 0, \"completion_tokens\": 9, \"effectiveCachedTokens\": 0, \"input_tokens\": 0, \"output_tokens\": 0, \"output_tokens_details\": null, \"prompt_tokens\": 1238, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cached_tokens\": 0, \"image_tokens\": 0, \"text_tokens\": 0, \"video_tokens\": 0}, \"total_tokens\": 1247}}, \"level2\": {}}, \"query\": \"你好\", \"validation\": {\"errors\": [], \"ok\": true, \"warnings\": []}}",
+  "overall_score": 1.0,
+  "judge_result": "",
+  "push_time": "2026-06-15 21:23:50.849+0800"
+}

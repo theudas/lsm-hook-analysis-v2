@@ -41,6 +41,16 @@ crontab -l
 
 tail -f /home/hx/try/lsm-hook-analysis-v2/analyze_cron.log
 
+5. 停止自动分析：
+
+crontab -e
+
+删除或注释掉上面的 `0 2 * * * ... analyze.py ...` 这一行即可停止后续定时执行。
+保存后用 `crontab -l` 确认该任务已不存在；如果脚本正好正在运行，可先用：
+
+pgrep -af "python3 .*analyze.py"
+kill <pid>
+
 脚本会自动跳过已经生成 analysis_violations.jsonl 和 analysis_report.md 的 round，
 因此每天运行不会重复覆盖已分析结果。新报告生成后会顺序上报到：
 

@@ -51,3 +51,41 @@ Traceback (most recent call last):
     raise RuntimeError(f"上报失败: HTTP {exc.code} {body}") from exc
 RuntimeError: 上报失败: HTTP 404 {"error":"\u672a\u627e\u5230\u5bf9\u5e94\u7684 round_id: mock_1781418436315","ok":false}
 
+2026-06-16 02:00:02 [INFO] [lha_analyzer] 分析任务启动 base=/home/hx/try/lsm-hook-analysis-v2/input api_url=http://8.152.192.7:15100/api/rounds/detection/kernel push_timeout=900s log_file=/home/hx/try/lsm-hook-analysis-v2/logs/analyze.log
+2026-06-16 02:00:02 [INFO] [lha_analyzer] 发现 round 目录 count=9 dirs=['/home/hx/try/lsm-hook-analysis-v2/input/28559234', '/home/hx/try/lsm-hook-analysis-v2/input/59ab88d1', '/home/hx/try/lsm-hook-analysis-v2/input/9d87226e', '/home/hx/try/lsm-hook-analysis-v2/input/a74f0e75', '/home/hx/try/lsm-hook-analysis-v2/input/be5c6a84', '/home/hx/try/lsm-hook-analysis-v2/input/cf6a7625', '/home/hx/try/lsm-hook-analysis-v2/input/e4fe4e38', '/home/hx/try/lsm-hook-analysis-v2/input/f1cd483e', '/home/hx/try/lsm-hook-analysis-v2/input/mock_1781418436315']
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [28559234] mock round，跳过分析和正式上报 round_dir=/home/hx/try/lsm-hook-analysis-v2/input/28559234
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [59ab88d1] 已存在分析结果且已上报，跳过 round_dir=/home/hx/try/lsm-hook-analysis-v2/input/59ab88d1 report_path=/home/hx/try/lsm-hook-analysis-v2/input/59ab88d1/analysis_report.md marker_path=/home/hx/try/lsm-hook-analysis-v2/input/59ab88d1/analysis_kernel_report_push.json
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [9d87226e] 已存在分析结果且已上报，跳过 round_dir=/home/hx/try/lsm-hook-analysis-v2/input/9d87226e report_path=/home/hx/try/lsm-hook-analysis-v2/input/9d87226e/analysis_report.md marker_path=/home/hx/try/lsm-hook-analysis-v2/input/9d87226e/analysis_kernel_report_push.json
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [a74f0e75] 开始分析 round_dir=/home/hx/try/lsm-hook-analysis-v2/input/a74f0e75 files={'round_end': {'exists': True, 'size': 9143}, 'round_kernel': {'exists': False, 'size': 0}, 'lsm': {'exists': False, 'size': 0}, 'syscalls': {'exists': False, 'size': 0}}
+2026-06-16 02:00:02 [INFO] [lha_analyzer] 已加载 JSON path=/home/hx/try/lsm-hook-analysis-v2/input/a74f0e75/round_end.json size=9143 bytes keys=['action_json', 'ir_json', 'judge_result', 'overall_score', 'push_time', 'push_type', 'round_id', 'time_end', 'time_start']
+2026-06-16 02:00:02 [WARNING] [lha_analyzer] 输入 JSON 文件不存在 path=/home/hx/try/lsm-hook-analysis-v2/input/a74f0e75/round_kernel.json
+2026-06-16 02:00:02 [WARNING] [lha_analyzer] 输入 JSONL 文件不存在 path=/home/hx/try/lsm-hook-analysis-v2/input/a74f0e75/kernel_lsm_hook_result.jsonl
+2026-06-16 02:00:02 [WARNING] [lha_analyzer] 输入 JSONL 文件不存在 path=/home/hx/try/lsm-hook-analysis-v2/input/a74f0e75/kernel_syscall_seq.jsonl
+2026-06-16 02:00:02 [INFO] [lha_analyzer] round_kernel.kernel_resource_facts 为空
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [a74f0e75] 输入解析完成 allowed_files=2 allowed_tools=4 user_actions=3 resource_facts=0 kernel_ops=0
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [a74f0e75] 分析完成 elapsed=0.001s lsm_total=0 syscall_total=0 kernel_file_ops=0 violations=0 sensitive=0 judge_mismatch=0
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [a74f0e75] 分析产物写入完成 elapsed=0.001s violations_path=/home/hx/try/lsm-hook-analysis-v2/input/a74f0e75/analysis_violations.jsonl violations_size=0 bytes report_path=/home/hx/try/lsm-hook-analysis-v2/input/a74f0e75/analysis_report.md report_size=870 bytes
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [a74f0e75] 分析结果摘要 LSM放行=0 越权=0 敏感=0 判据分歧=0 round_dir=/home/hx/try/lsm-hook-analysis-v2/input/a74f0e75
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [a74f0e75] 开始上报内核分析报告 url=http://8.152.192.7:15100/api/rounds/detection/kernel timeout=900s payload={'round_id': 'a74f0e75', 'judge_result_kernel_md_path': '/home/hx/try/lsm-hook-analysis-v2/input/a74f0e75/analysis_report.md'} payload_size=126 bytes report_exists=True report_size=870 bytes
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [a74f0e75] 上报成功 elapsed=0.017s response={'ok': True}
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [a74f0e75] 已写入上报标记 marker_path=/home/hx/try/lsm-hook-analysis-v2/input/a74f0e75/analysis_kernel_report_push.json marker_size=238 bytes endpoint=http://8.152.192.7:15100/api/rounds/detection/kernel
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [a74f0e75] 上报成功 -> http://8.152.192.7:15100/api/rounds/detection/kernel
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [be5c6a84] mock round，跳过分析和正式上报 round_dir=/home/hx/try/lsm-hook-analysis-v2/input/be5c6a84
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [cf6a7625] 已存在分析结果且已上报，跳过 round_dir=/home/hx/try/lsm-hook-analysis-v2/input/cf6a7625 report_path=/home/hx/try/lsm-hook-analysis-v2/input/cf6a7625/analysis_report.md marker_path=/home/hx/try/lsm-hook-analysis-v2/input/cf6a7625/analysis_kernel_report_push.json
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [e4fe4e38] 开始分析 round_dir=/home/hx/try/lsm-hook-analysis-v2/input/e4fe4e38 files={'round_end': {'exists': True, 'size': 1069}, 'round_kernel': {'exists': False, 'size': 0}, 'lsm': {'exists': False, 'size': 0}, 'syscalls': {'exists': False, 'size': 0}}
+2026-06-16 02:00:02 [INFO] [lha_analyzer] 已加载 JSON path=/home/hx/try/lsm-hook-analysis-v2/input/e4fe4e38/round_end.json size=1069 bytes keys=['action_json', 'ir_json', 'judge_result', 'overall_score', 'push_time', 'push_type', 'round_id', 'time_end', 'time_start']
+2026-06-16 02:00:02 [WARNING] [lha_analyzer] 输入 JSON 文件不存在 path=/home/hx/try/lsm-hook-analysis-v2/input/e4fe4e38/round_kernel.json
+2026-06-16 02:00:02 [WARNING] [lha_analyzer] 输入 JSONL 文件不存在 path=/home/hx/try/lsm-hook-analysis-v2/input/e4fe4e38/kernel_lsm_hook_result.jsonl
+2026-06-16 02:00:02 [WARNING] [lha_analyzer] 输入 JSONL 文件不存在 path=/home/hx/try/lsm-hook-analysis-v2/input/e4fe4e38/kernel_syscall_seq.jsonl
+2026-06-16 02:00:02 [INFO] [lha_analyzer] round_kernel.kernel_resource_facts 为空
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [e4fe4e38] 输入解析完成 allowed_files=0 allowed_tools=0 user_actions=0 resource_facts=0 kernel_ops=0
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [e4fe4e38] 分析完成 elapsed=0.001s lsm_total=0 syscall_total=0 kernel_file_ops=0 violations=0 sensitive=0 judge_mismatch=0
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [e4fe4e38] 分析产物写入完成 elapsed=0.000s violations_path=/home/hx/try/lsm-hook-analysis-v2/input/e4fe4e38/analysis_violations.jsonl violations_size=0 bytes report_path=/home/hx/try/lsm-hook-analysis-v2/input/e4fe4e38/analysis_report.md report_size=490 bytes
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [e4fe4e38] 分析结果摘要 LSM放行=0 越权=0 敏感=0 判据分歧=0 round_dir=/home/hx/try/lsm-hook-analysis-v2/input/e4fe4e38
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [e4fe4e38] 开始上报内核分析报告 url=http://8.152.192.7:15100/api/rounds/detection/kernel timeout=900s payload={'round_id': 'e4fe4e38', 'judge_result_kernel_md_path': '/home/hx/try/lsm-hook-analysis-v2/input/e4fe4e38/analysis_report.md'} payload_size=126 bytes report_exists=True report_size=490 bytes
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [e4fe4e38] 上报成功 elapsed=0.012s response={'ok': True}
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [e4fe4e38] 已写入上报标记 marker_path=/home/hx/try/lsm-hook-analysis-v2/input/e4fe4e38/analysis_kernel_report_push.json marker_size=238 bytes endpoint=http://8.152.192.7:15100/api/rounds/detection/kernel
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [e4fe4e38] 上报成功 -> http://8.152.192.7:15100/api/rounds/detection/kernel
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [f1cd483e] 已存在分析结果且已上报，跳过 round_dir=/home/hx/try/lsm-hook-analysis-v2/input/f1cd483e report_path=/home/hx/try/lsm-hook-analysis-v2/input/f1cd483e/analysis_report.md marker_path=/home/hx/try/lsm-hook-analysis-v2/input/f1cd483e/analysis_kernel_report_push.json
+2026-06-16 02:00:02 [INFO] [lha_analyzer] [mock_1781418436315] mock round，跳过分析和正式上报 round_dir=/home/hx/try/lsm-hook-analysis-v2/input/mock_1781418436315
+2026-06-16 02:00:02 [INFO] [lha_analyzer] 分析任务完成 elapsed=0.042s total=9 new_analyzed=2 skipped=7 pushed=2 failed_push=0 outputs=analysis_violations.jsonl,analysis_report.md

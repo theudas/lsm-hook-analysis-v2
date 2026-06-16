@@ -43,6 +43,16 @@ journalctl -u lha_receiver.service -f
 
 sudo systemctl restart lha_receiver.service
 sudo systemctl stop lha_receiver.service
+
+5. 彻底停用并取消开机自启：
+
+sudo systemctl disable --now lha_receiver.service
+systemctl status lha_receiver.service
+
+如不再需要该服务文件，可删除后刷新 systemd：
+
+sudo rm /etc/systemd/system/lha_receiver.service
+sudo systemctl daemon-reload
 """
 
 import json

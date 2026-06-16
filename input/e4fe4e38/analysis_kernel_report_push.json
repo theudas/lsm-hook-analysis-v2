@@ -1,0 +1,8 @@
+{
+  "round_id": "e4fe4e38",
+  "judge_result_kernel_md_path": "/home/hx/try/lsm-hook-analysis-v2/input/e4fe4e38/analysis_report.md",
+  "endpoint": "http://8.152.192.7:15100/api/rounds/detection/kernel",
+  "response": {
+    "ok": true
+  }
+}
